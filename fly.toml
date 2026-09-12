@@ -6,6 +6,7 @@ primary_region = 'ewr'
 
 [env]
   VINYL_API_DATABASE_URL = 'sqlite:////data/vinyl_api.db'
+  VINYL_API_ENV = 'production'
 
 [[mounts]]
   source = 'vinyl_api_data'

@@ -1,13 +1,17 @@
 from sqlalchemy import Column, Integer, String, Float, DateTime, Text
 from .database import Base
-import datetime
+from datetime import datetime, timezone
+
+
+def _utcnow():
+    return datetime.now(timezone.utc)
 
 
 class Listing(Base):
     __tablename__ = "listings"
 
     id = Column(Integer, primary_key=True, index=True)
-    listing_id = Column(String, index=True, nullable=False)
+    listing_id = Column(String, unique=True, index=True, nullable=False)
     release_id = Column(Integer, index=True, nullable=False)
     price = Column(Float)
     currency = Column(String(8))
@@ -20,7 +24,7 @@ class Listing(Base):
     price_usd = Column(Float)
     ships_to_us = Column(String(64))
     shipping_notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class Play(Base):
@@ -32,4 +36,4 @@ class Play(Base):
     played_at = Column(DateTime, nullable=False)
     source = Column(String(128))
     notes = Column(Text)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    created_at = Column(DateTime, default=_utcnow)

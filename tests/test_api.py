@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from vinyl_api.main import app
+from vinyl_api.main import app, lifespan
 
 
 @pytest.fixture
@@ -53,3 +53,49 @@ def test_keyless_local_mode_allows_writes(client, monkeypatch):
 
     assert response.status_code == 200
     assert response.json() == {"saved": 1}
+
+
+def test_repeat_bulk_post_upserts_instead_of_duplicating(client, monkeypatch):
+    monkeypatch.delenv("VINYL_API_KEY", raising=False)
+    payload = {
+        "release_id": 999,
+        "listings": [
+            {"listing_id": "upsert-test", "price": 10.0, "currency": "USD"}
+        ],
+    }
+
+    first = client.post("/listings/bulk", json=payload)
+    payload["listings"][0]["price"] = 20.0
+    second = client.post("/listings/bulk", json=payload)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+
+    from vinyl_api import database, models
+
+    db = database.SessionLocal()
+    try:
+        rows = (
+            db.query(models.Listing)
+            .filter(models.Listing.listing_id == "upsert-test")
+            .all()
+        )
+    finally:
+        db.close()
+
+    assert len(rows) == 1
+    assert rows[0].price == 20.0
+
+
+def test_non_local_env_refuses_to_start_without_key(monkeypatch):
+    import asyncio
+
+    monkeypatch.setenv("VINYL_API_ENV", "production")
+    monkeypatch.delenv("VINYL_API_KEY", raising=False)
+
+    async def _enter():
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="VINYL_API_KEY must be set"):
+        asyncio.run(_enter())

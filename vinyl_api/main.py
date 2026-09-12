@@ -1,12 +1,25 @@
 import hmac
 import os
+from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException
 from typing import Optional
 from . import database, models, schemas
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 
-app = FastAPI(title="Vinyl API (dev)")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.environ.get("VINYL_API_ENV", "local") != "local" and not os.environ.get("VINYL_API_KEY"):
+        raise RuntimeError(
+            "VINYL_API_KEY must be set when VINYL_API_ENV is not 'local' "
+            "(refusing to start with write endpoints unauthenticated)."
+        )
+    database.init_db()
+    yield
+
+
+app = FastAPI(title="Vinyl API (dev)", lifespan=lifespan)
 
 
 def require_api_key(authorization: Optional[str] = Header(default=None)) -> None:
@@ -29,11 +42,6 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.on_event("startup")
-def on_startup():
-    database.init_db()
-
-
 @app.post("/listings/bulk", dependencies=[Depends(require_api_key)])
 def post_listings_bulk(payload: schemas.BulkListings):
     """Accept bulk listings for a release and persist them.
@@ -46,8 +54,12 @@ def post_listings_bulk(payload: schemas.BulkListings):
     saved = 0
     try:
         for lst in payload.listings:
-            obj = models.Listing(
-                listing_id=lst.listing_id,
+            existing = (
+                db.query(models.Listing)
+                .filter(models.Listing.listing_id == lst.listing_id)
+                .one_or_none()
+            )
+            fields = dict(
                 release_id=payload.release_id,
                 price=lst.price,
                 currency=lst.currency,
@@ -56,12 +68,16 @@ def post_listings_bulk(payload: schemas.BulkListings):
                 ships_from=lst.ships_from,
                 seller=lst.seller,
                 listing_url=lst.listing_url,
-                last_fetched=lst.last_fetched or datetime.utcnow(),
+                last_fetched=lst.last_fetched or datetime.now(timezone.utc),
                 price_usd=lst.price_usd,
                 ships_to_us=lst.ships_to_us,
                 shipping_notes=lst.shipping_notes,
             )
-            db.add(obj)
+            if existing:
+                for key, value in fields.items():
+                    setattr(existing, key, value)
+            else:
+                db.add(models.Listing(listing_id=lst.listing_id, **fields))
             saved += 1
         db.commit()
     except Exception as exc:
@@ -81,7 +97,7 @@ def log_play(user_id: int, payload: schemas.PlayIn):
     """
     db: Session = database.SessionLocal()
     try:
-        played_at = payload.played_at or datetime.utcnow()
+        played_at = payload.played_at or datetime.now(timezone.utc)
         obj = models.Play(
             user_id=user_id,
             release_id=payload.release_id,

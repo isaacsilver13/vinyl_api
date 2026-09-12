@@ -10,11 +10,11 @@ From this repository root:
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
-python -m uvicorn vinyl_api.main:app --reload
+python -m uvicorn vinyl_api.main:app --reload --port 8003
 ```
 
-The API listens on `http://127.0.0.1:8000`. Check
-`http://127.0.0.1:8000/health` for a startup check.
+The API listens on `http://127.0.0.1:8003` for the dashboard-compatible local
+profile. Check `http://127.0.0.1:8003/health` for a startup check.
 
 Run tests with:
 
